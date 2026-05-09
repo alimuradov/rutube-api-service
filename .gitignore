@@ -16,3 +16,12 @@ ENV/
 # Cookie files (contain sensitive session data)
 cookies.txt
 *_cookies*.txt
+
+# Go
+rutube-service
+temp/
+vendor/
+*.exe
+*.test
+*.prof
+rutube-server
