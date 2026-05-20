@@ -20,7 +20,7 @@ from tqdm import tqdm
 
 DEFAULT_CONNECT_TIMEOUT = 10  # seconds to establish connection
 DEFAULT_READ_TIMEOUT = 30     # seconds to wait for response
-UPLOAD_READ_TIMEOUT = 120     # larger timeout for actual file upload
+UPLOAD_READ_TIMEOUT = 300     # larger timeout for actual file upload (slow connections)
 
 
 def load_cookies_from_file(cookie_file: Path) -> tuple[http.cookiejar.MozillaCookieJar, dict]:
@@ -232,6 +232,7 @@ class RutubeUploader:
     def upload_video_data(self, session_id: str, video_path: Path) -> None:
         """
         Upload the actual video data using TUS protocol.
+        Uses single-shot upload (Rutube rejects multi-chunk PATCH).
 
         Args:
             session_id: Upload session ID
@@ -259,18 +260,18 @@ class RutubeUploader:
             'Content-Type': 'application/offset+octet-stream',
             'Tus-Resumable': '1.0.0',
             'Upload-Offset': '0',
+            'Content-Length': str(video_size),
+            'Connection': 'close',
         }
 
-        # Upload with progress bar
+        # Use fresh request (no session reuse) to avoid connection pool issues
         with open(video_path, 'rb') as f:
             with tqdm(total=video_size, unit='B', unit_scale=True, desc="Uploading") as pbar:
-                # For large files, you might want to implement chunked upload
-                # For now, we'll upload the entire file at once
-                data = f.read()
-
-                response = self.session.patch(
-                    url, headers=headers, data=data,
+                response = requests.patch(
+                    url, headers=headers, data=f,
+                    cookies=self.session.cookies,
                     timeout=(DEFAULT_CONNECT_TIMEOUT, UPLOAD_READ_TIMEOUT),
+                    stream=True,
                 )
                 response.raise_for_status()
                 pbar.update(video_size)
