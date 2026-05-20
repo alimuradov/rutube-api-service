@@ -18,6 +18,11 @@ import requests
 from tqdm import tqdm
 
 
+DEFAULT_CONNECT_TIMEOUT = 10  # seconds to establish connection
+DEFAULT_READ_TIMEOUT = 30     # seconds to wait for response
+UPLOAD_READ_TIMEOUT = 120     # larger timeout for actual file upload
+
+
 def load_cookies_from_file(cookie_file: Path) -> tuple[http.cookiejar.MozillaCookieJar, dict]:
     """
     Load cookies from a Netscape/Mozilla format cookie file.
@@ -129,7 +134,10 @@ class RutubeUploader:
         data = json.dumps({"cancelToken": {"promise": {}}})
 
         try:
-            response = self.session.post(url, params=params, headers=headers, data=data)
+            response = self.session.post(
+                url, params=params, headers=headers, data=data,
+                timeout=(DEFAULT_CONNECT_TIMEOUT, DEFAULT_READ_TIMEOUT),
+            )
             response.raise_for_status()
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 403:
@@ -144,6 +152,12 @@ class RutubeUploader:
                 ) from e
             else:
                 raise
+        except requests.exceptions.Timeout as e:
+            raise Exception(
+                f"Timed out while creating upload session "
+                f"({DEFAULT_CONNECT_TIMEOUT}s connect / {DEFAULT_READ_TIMEOUT}s read). "
+                "Rutube API may be unavailable."
+            ) from e
 
         result = response.json()
         session_id = result['sid']
@@ -207,7 +221,10 @@ class RutubeUploader:
             'Upload-Metadata': metadata,
         }
 
-        response = self.session.post(url, headers=headers)
+        response = self.session.post(
+            url, headers=headers,
+            timeout=(DEFAULT_CONNECT_TIMEOUT, DEFAULT_READ_TIMEOUT),
+        )
         response.raise_for_status()
 
         print("✓ TUS upload initialized")
@@ -251,7 +268,10 @@ class RutubeUploader:
                 # For now, we'll upload the entire file at once
                 data = f.read()
 
-                response = self.session.patch(url, headers=headers, data=data)
+                response = self.session.patch(
+                    url, headers=headers, data=data,
+                    timeout=(DEFAULT_CONNECT_TIMEOUT, UPLOAD_READ_TIMEOUT),
+                )
                 response.raise_for_status()
                 pbar.update(video_size)
 
@@ -313,8 +333,11 @@ class RutubeUploader:
             }
         }
 
-        response = self.session.patch(url, params=params, headers=headers,
-                                     data=json.dumps(data))
+        response = self.session.patch(
+            url, params=params, headers=headers,
+            data=json.dumps(data),
+            timeout=(DEFAULT_CONNECT_TIMEOUT, DEFAULT_READ_TIMEOUT),
+        )
         response.raise_for_status()
 
         result = response.json()
